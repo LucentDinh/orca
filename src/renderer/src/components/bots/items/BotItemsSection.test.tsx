@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { Bot } from '../../../../../shared/bot-types'
@@ -120,10 +120,22 @@ it('lists Orca’s asks while items load and after', () => {
   expect(screen.getByRole('button', { name: 'Open Linear' })).toBeTruthy()
   expect(screen.getByText('Item 2')).toBeTruthy()
 
-  rerender(<Section asks={SIGN_IN} />)
-  expect(screen.queryByText('Nothing needs you and nothing is running.')).toBeNull()
-
   const planned = makeTestBotItem(3, { status: 'planned', lastActivityAt: NOW })
-  rerender(<Section read={{ items: [planned], counts: {}, seenEventId: 'e0' }} />)
-  expect(screen.getByText('Nothing needs you and nothing is running.')).toBeTruthy()
+  const plannedRead = { items: [planned], counts: {}, seenEventId: 'e0' }
+  rerender(<Section read={plannedRead} asks={SIGN_IN} />)
+  expect(screen.queryByRole('status')).toBeNull()
+
+  rerender(<Section read={plannedRead} />)
+  expect(within(screen.getByRole('status')).getByText('Nothing needs you')).toBeTruthy()
+})
+
+it('says all clear above the folded sections, not under them', () => {
+  const planned = makeTestBotItem(3, { status: 'planned', lastActivityAt: NOW })
+  render(<Section read={{ items: [planned], counts: {}, seenEventId: 'e0' }} />)
+
+  const allClear = screen.getByRole('status')
+  const plannedFold = screen.getByRole('button', { name: /Planned/ })
+  expect(
+    allClear.compareDocumentPosition(plannedFold) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
 })
