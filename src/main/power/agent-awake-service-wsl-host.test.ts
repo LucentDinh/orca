@@ -318,4 +318,17 @@ describe('keep-awake for agents on WSL hosts', () => {
     expect(service.getStatus().active).toBe(false)
     service.dispose()
   })
+
+  it('still counts an agent already working when the host reconnects before its first inventory', async () => {
+    const service = createService('off')
+    const host = createHost(service)
+    service.setMode('auto')
+    await Promise.resolve()
+    await host.setHostState('reconnecting')
+    await host.setHostState('ready')
+
+    host.send(frame('snapshots', 500))
+    expect(service.getStatus().active).toBe(true)
+    service.dispose()
+  })
 })

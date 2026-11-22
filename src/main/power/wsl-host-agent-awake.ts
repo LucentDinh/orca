@@ -31,9 +31,6 @@ type HostWatch = {
   worktrees: Map<string, Map<string, PaneReceipt>>
   retryTimer: ReturnType<typeof setTimeout> | null
   retryAttempt: number
-  /** Opened because keep-awake just turned on: its first inventory counts rows already working,
-   *  since agents that worked while it was off are live here, not restored. */
-  countFirstSnapshot: boolean
 }
 
 // Why not sooner: right after orcad exits the host may still read ready until its supervisor verifies.
@@ -46,6 +43,10 @@ export class WslHostAgentAwake {
   /** Per host, outliving its streams and connections; dropped only when the host is removed. */
   private readonly receiptsByEnvironment = new Map<string, Map<string, PaneReceipt>>()
   private readonly reported = new Map<string, string>()
+  /** Hosts ready when keep-awake turned on and not yet inventoried since: their first inventory
+   *  counts rows already working, since agents that worked while it was off are live, not restored.
+   *  Kept per host, not per stream, so a reconnect before that inventory does not lose it. */
+  private readonly countFirstInventory = new Set<string>()
   private readonly stopListening: () => void
   private readonly stopListeningForEnabled: () => void
   private enabled: boolean
@@ -84,6 +85,11 @@ export class WslHostAgentAwake {
         this.receiptsByEnvironment.delete(environmentId)
       }
     }
+    for (const environmentId of this.countFirstInventory) {
+      if (!this.enabled || !known.has(environmentId)) {
+        this.countFirstInventory.delete(environmentId)
+      }
+    }
     // Why gate here: with keep-awake not counting agents, a per-host stream and its decoding buy nothing.
     const ready = new Set(
       this.enabled
@@ -96,13 +102,15 @@ export class WslHostAgentAwake {
       }
     }
     for (const environmentId of ready) {
+      if (enabling) {
+        this.countFirstInventory.add(environmentId)
+      }
       if (!this.watches.has(environmentId)) {
         const watch: HostWatch = {
           stream: null,
           worktrees: new Map(),
           retryTimer: null,
-          retryAttempt: 0,
-          countFirstSnapshot: enabling
+          retryAttempt: 0
         }
         this.watches.set(environmentId, watch)
         this.open(environmentId, watch)
@@ -190,8 +198,8 @@ export class WslHostAgentAwake {
     if (frame.type === 'snapshots' && Array.isArray(frame.snapshots)) {
       // Why: rows already working when this app first sees the host are hydrated, not observed,
       // unless keep-awake was just turned on: then the agents are live and must count at once.
-      const hydrating = receipts === undefined && !watch.countFirstSnapshot
-      watch.countFirstSnapshot = false
+      const hydrating = receipts === undefined && !this.countFirstInventory.has(environmentId)
+      this.countFirstInventory.delete(environmentId)
       watch.worktrees.clear()
       for (const snapshot of frame.snapshots) {
         this.applySnapshot(watch, receipts, snapshot, hydrating)
