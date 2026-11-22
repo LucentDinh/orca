@@ -94,6 +94,7 @@ function setup(initial: Bot = makeBot()) {
     })
   )
   const showTab = vi.fn(async () => undefined)
+  const dropUnreadMail = vi.fn(async (_bot: Bot, _replaced: string | null) => undefined)
   const chats = botChatSessions({
     bots: {
       list: () => [bot],
@@ -106,7 +107,8 @@ function setup(initial: Bot = makeBot()) {
     host: async () => host as unknown as BotChatHost,
     createChat,
     showTab,
-    closeChat
+    closeChat,
+    dropUnreadMail
   })
   return {
     chats,
@@ -114,6 +116,7 @@ function setup(initial: Bot = makeBot()) {
     createChat,
     showTab,
     closeChat,
+    dropUnreadMail,
     records,
     bot: () => bot,
     setBot: (next: Bot) => (bot = next)
@@ -148,7 +151,9 @@ describe('bot Chat', () => {
   })
 
   it('starts a new Chat when the saved one is gone or runs another agent', async () => {
-    const { chats, closeChat, setBot, bot } = setup(makeBot({ chatSessionId: 'gone' }))
+    const { chats, closeChat, dropUnreadMail, setBot, bot } = setup(
+      makeBot({ chatSessionId: 'gone' })
+    )
     const replaced = await chats.ensure('bot-1')
     expect(replaced).not.toBe('gone')
 
@@ -157,6 +162,8 @@ describe('bot Chat', () => {
     setBot({ ...bot(), agent: 'codex' })
     expect(await chats.ensure('bot-1')).not.toBe(replaced)
     expect(closeChat).toHaveBeenCalledWith(replaced)
+    // Neither old Chat reads its unread mail again, so its senders are told, as after `/new`.
+    expect(dropUnreadMail.mock.calls.map(([, sessionId]) => sessionId)).toEqual(['gone', replaced])
   })
 
   it('keeps one Home across two agent switches; each replaced one becomes an ordinary closed chat', async () => {

@@ -57,7 +57,8 @@ vi.mock(
 vi.mock('../../runtime/orchestration/addressing/session-lineage/canonical-orca-session-id', () => ({
   createCanonicalOrcaSessionResolver: () => () => 'chat-root'
 }))
-vi.mock('../../../shared/agent-session/identity/orca-session-address', () => ({
+vi.mock('../../../shared/agent-session/identity/orca-session-address', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   isOrcaSessionId: () => true
 }))
 vi.mock('../../runtime/agent-session/lifecycle/structured-agent-session-close', () => ({
@@ -90,6 +91,8 @@ vi.mock('../../runtime/rpc/methods/orchestration/messaging/bot-request-outcome',
 }))
 
 import { deleteOrcaChat } from './orca-chat-delete'
+import { OrchestrationDb } from '../../runtime/orchestration/db/orchestration-db'
+import { testOrcaSessionId } from '../../../shared/agent-session/identity/orca-session-address-test-fixture'
 
 const runtime = {
   ensureStructuredAgentSessionHost: async () => undefined,
@@ -172,6 +175,24 @@ describe('deleteOrcaChat', () => {
 
     expect(await deleteChat('chat-root')).toEqual({ outcome: 'refused', reason: 'home' })
     expect(mocks.forgets).toEqual([])
+  })
+
+  it('stops a deleted chat coordinating its Runs, so their open worker asks are told', async () => {
+    const coordinator = testOrcaSessionId('44444444-4444-4444-8444-444444444444')
+    mocks.records = [record('chat-root', 'conv-1'), record(coordinator, 'conv-2')]
+    const db = new OrchestrationDb(':memory:')
+    const run = db.createRun({
+      objective: 'o',
+      coordinatorHandle: null,
+      coordinatorPaneKey: null,
+      coordinatorOrcaSessionId: coordinator
+    })
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the fake implements every runtime member the delete reads.
+    const withDb = { ...runtime, getOrchestrationDb: () => db } as never
+
+    expect(await deleteOrcaChat(withDb, 'chat-root')).toEqual({ outcome: 'deleted' })
+    expect(db.getRun(run.id)?.coordinator_orca_session_id).toBeNull()
+    db.close()
   })
 
   it("tells unread mail of a managed agent's chat only after the commit", async () => {
