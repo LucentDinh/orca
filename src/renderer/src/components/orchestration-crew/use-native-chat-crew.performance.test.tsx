@@ -53,6 +53,13 @@ vi.mock('../native-chat/tools/tasks/NativeChatBackgroundTasksStatus', () => ({
     return null
   }
 }))
+// A chat with a crew shows the crew panel's own strip.
+vi.mock('../native-chat/tools/tasks/NativeChatCrewBackgroundTasksStatus', () => ({
+  NativeChatCrewBackgroundTasksStatus: () => {
+    rpc.stripRenders++
+    return null
+  }
+}))
 
 const SESSIONS = Array.from(
   { length: 10 },
@@ -126,6 +133,9 @@ const NO_WORK: StructuredSessionBackgroundTasksView = {
   incomplete: false
 }
 
+// The session holds its target across updates; tests are not compiled, so keep it stable here.
+const LOCAL = { kind: 'local' } as const
+
 /** A chat as its session mounts it: each session update renders it with a new controller. */
 function Session(_props: { update: number }) {
   const source = useNativeChatCrewSource({
@@ -137,15 +147,13 @@ function Session(_props: { update: number }) {
   })
   const subagents = useStructuredNativeChatSubagents({
     sessionId: SESSIONS[9],
-    target: { kind: 'local' },
+    target: LOCAL,
     paneKey: 'tab_chat:pane',
     isVisible: true,
     controller: { backgroundTasks: NO_WORK, stopBackgroundTask: async () => null }
   })
   return (
-    <NativeChatCrewContext.Provider value={source}>
-      {subagents.dock}
-    </NativeChatCrewContext.Provider>
+    <NativeChatCrewContext.Provider value={source}>{subagents.dock}</NativeChatCrewContext.Provider>
   )
 }
 
